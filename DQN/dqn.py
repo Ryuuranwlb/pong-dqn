@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 import os
+from glob import glob
 from collections import namedtuple, deque
 from utils.process_obs_tool import ObsProcessTool
 
@@ -138,13 +139,28 @@ class DQNAgent:
         self.optimizer.step()
 
 
-    def save_model(self, step, path):
-        torch.save(self.dqn_net.state_dict(), os.path.join(path, 'eval_checkpoint_{}.pth'.format(step)))
-        torch.save(self.target_net.state_dict(), os.path.join(path, 'target_checkpoint_{}.pth'.format(step)))
+    def save_model(self, episode, step, path):
+        eval_name = 'eval_checkpoint_ep{}_step{}.pth'.format(episode, step)
+        target_name = 'target_checkpoint_ep{}_step{}.pth'.format(episode, step)
+        torch.save(self.dqn_net.state_dict(), os.path.join(path, eval_name))
+        torch.save(self.target_net.state_dict(), os.path.join(path, target_name))
 
     def load_model(self, step, path):
-        self.dqn_net.load_state_dict(torch.load(os.path.join(path, 'eval_checkpoint_{}.pth'.format(step))))
-        self.target_net.load_state_dict(torch.load(os.path.join(path, 'target_checkpoint_{}.pth'.format(step))))
+        legacy_eval = os.path.join(path, 'eval_checkpoint_{}.pth'.format(step))
+        legacy_target = os.path.join(path, 'target_checkpoint_{}.pth'.format(step))
+
+        if os.path.exists(legacy_eval) and os.path.exists(legacy_target):
+            self.dqn_net.load_state_dict(torch.load(legacy_eval))
+            self.target_net.load_state_dict(torch.load(legacy_target))
+            return
+
+        eval_matches = sorted(glob(os.path.join(path, 'eval_checkpoint_ep*_step{}.pth'.format(step))))
+        target_matches = sorted(glob(os.path.join(path, 'target_checkpoint_ep*_step{}.pth'.format(step))))
+        if not eval_matches or not target_matches:
+            raise FileNotFoundError('checkpoint for step {} not found in {}'.format(step, path))
+
+        self.dqn_net.load_state_dict(torch.load(eval_matches[-1]))
+        self.target_net.load_state_dict(torch.load(target_matches[-1]))
 
     def update_target_net(self, step):
         if step % 1000 == 0:

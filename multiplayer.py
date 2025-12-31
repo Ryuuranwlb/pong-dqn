@@ -45,8 +45,7 @@ def parse_args():
 
     parser.add_argument("-start_step_1", type=int, default=0)
     parser.add_argument("-start_step_2", type=int, default=0)
-    parser.add_argument("-total_episode", type=int, default=400)
-    parser.add_argument("-eval_interval_steps", type=int, default=1000)
+    parser.add_argument("-total_episode", type=int, default=5)
 
     parser.add_argument("-horizon", type=int, default=4)
     parser.add_argument("-player", type=int, default=1)
@@ -150,10 +149,9 @@ def plot_learning_curve(x, scores, epsilon, filename):
     plt.savefig(filename)
 
 
-def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000, eval_interval_steps=1000):
+def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000):
     global CONFIG
 
-    eval_interval_steps = max(1, eval_interval_steps)
 
     env = PongDiscretizer(retro.make(game='Pong-Atari2600', players=players), players=players)
     env.reset()
@@ -245,25 +243,22 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
 
         if avg_total_rew > best_avg_rew:
             best_avg_rew = avg_total_rew
-            agent_1.save_model(steps, CONFIG['model_dir'])
+            agent_1.save_model(i, steps, CONFIG['model_dir'])
             # if args.player == 2:
             #     agent_2.save_model(i, CONFIG['model_dir'])
 
         print('episode: %d, total step = %d, total reward = %.2f, avg reward = %.6f, best reward = %.2f, best avg reward = %.6f, epsilon = %.6f' % (i, steps, total_rew, avg_total_rew, best_rew, best_avg_rew, eps))
 
-        if steps - last_save_step >= eval_interval_steps:
-            agent_1.save_model(steps, CONFIG['model_dir'])
-            last_save_step = steps
 
-        if steps - last_eval_step >= eval_interval_steps:
+        if i % 25 == 0:
             # 测试agent
-            test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, step_id=steps, env=env)
-            last_eval_step = steps
+            test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, step_id=steps, env=env)
 
     plot_learning_curve(steps_list, total_rews, eps_list, os.path.join(CONFIG['model_dir'], 'pong.png'))
+    return steps_list, total_rews, eps_list, None
 
 
-def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, step_id=0, env=None):
+def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None):
     global CONFIG
 
     if env is None:
@@ -316,7 +311,7 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     figure = plt.figure(figsize=(10.8, 7.2))
     plt.ion()                                   # 为了可以动态显示
     plt.tight_layout()                          # 尽量减少窗口的留白
-    with writer.saving(figure, os.path.join(CONFIG['video_dir'], 'step_%d.mp4' % step_id), 100): 
+    with writer.saving(figure, os.path.join(CONFIG['video_dir'], 'ep_%d_step_%d.mp4' % (episode, step_id)), 100): 
         traverse_imgs(writer, images)
 
     return info
@@ -364,7 +359,7 @@ def main(args):
             agent_1.load_model(args.start_step_1, CONFIG['model_dir'])
         
         # 测试agent
-        info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, step_id=args.start_step_1)
+        info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, episode=0, step_id=args.start_step_1)
         print(info)
     else:
         if args.player == 2:
@@ -393,7 +388,7 @@ def main(args):
 
 
         # 训练agent
-        steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode, eval_interval_steps=args.eval_interval_steps)
+        steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode)
 
         return steps_list, total_rews, eps_list, data
 
