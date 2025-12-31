@@ -4,6 +4,7 @@ import gym
 from IPython import display
 import gym.spaces
 import numpy as np
+import random
 import cv2
 from tqdm import tqdm
 import argparse
@@ -19,6 +20,7 @@ from gym import make, ObservationWrapper, Wrapper
 from gym.spaces import Box
 from collections import deque
 from utils.process_obs_tool import ObsProcessTool
+from utils.logger import RunLogger
 
 import signal
 
@@ -27,6 +29,8 @@ CONFIG = {
     'model_dir': 'checkpoints',
     'video_dir': 'videos',
 }
+
+active_run_logger = None
 
 
 total_rews = []
@@ -39,6 +43,7 @@ def parse_args():
     parser.add_argument("-test_mode", action="store_true", default=False)
     parser.add_argument("-memo_1", type=str, default='test')
     parser.add_argument("-memo_2", type=str, default='test')
+    parser.add_argument("-seed", type=int, default=0)
 
     parser.add_argument("-agent_1", type=str, default='DQN')
     parser.add_argument("-agent_2", type=str, default='DQN')
@@ -50,6 +55,7 @@ def parse_args():
     parser.add_argument("-horizon", type=int, default=4)
     parser.add_argument("-player", type=int, default=1)
     parser.add_argument("-skip_frame", type=int, default=4)
+    parser.add_argument("-run_root", type=str, default='runs')
     
     return parser.parse_args()
 
@@ -149,7 +155,7 @@ def plot_learning_curve(x, scores, epsilon, filename):
     plt.savefig(filename)
 
 
-def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000):
+def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000, logger=None, seed=0, eval_episodes=1, eval_epsilon=0.0, eval_interval_episodes=25):
     global CONFIG
 
 
@@ -162,8 +168,7 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
     best_avg_rew = -np.inf
     best_rew = -np.inf
     steps = start_step
-    last_eval_step = steps
-    last_save_step = steps
+    eval_idx = 0
 
     for i in range(total_episode):
         done = False
@@ -173,6 +178,11 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
         last_action = None
         last_done = False
         obs = env.reset()
+        episode_decision_steps = 0
+        losses = []
+        td_errors = []
+        q_max_values = []
+        eps = agent_1.update_epsilon(steps)
         
         if players == 2:
             agent_1.reset()
@@ -193,8 +203,15 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
                 current_state = agent_1.dqn_net.obs_process_tool.obs
                 if last_state is not None:
                     agent_1.memory_push(last_state, last_action, current_state, reward_acc, last_done)
-                    agent_1.update(steps)
+                    metrics = agent_1.update(steps)
+                    if metrics is not None:
+                        losses.append(metrics["loss"])
+                        if metrics.get("td_errors") is not None:
+                            td_errors.extend(np.asarray(metrics["td_errors"]).tolist())
+                        if metrics.get("q_max") is not None:
+                            q_max_values.extend(np.asarray(metrics["q_max"]).tolist())
                     steps += 1
+                    episode_decision_steps += 1
                     reward_acc = 0.0
                 last_state = current_state
                 last_action = action_1
@@ -228,8 +245,15 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
                 next_state = agent_1.dqn_net.obs_process_tool.obs
 
             agent_1.memory_push(last_state, last_action, next_state, reward_acc, True)
-            agent_1.update(steps)
+            metrics = agent_1.update(steps)
+            if metrics is not None:
+                losses.append(metrics["loss"])
+                if metrics.get("td_errors") is not None:
+                    td_errors.extend(np.asarray(metrics["td_errors"]).tolist())
+                if metrics.get("q_max") is not None:
+                    q_max_values.extend(np.asarray(metrics["q_max"]).tolist())
             steps += 1
+            episode_decision_steps += 1
 
 
         total_rews.append(total_rew)
@@ -247,18 +271,65 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
             # if args.player == 2:
             #     agent_2.save_model(i, CONFIG['model_dir'])
 
+        loss_mean = float(np.mean(losses)) if len(losses) > 0 else np.nan
+        td_error_p95 = float(np.percentile(np.asarray(td_errors), 95)) if len(td_errors) > 0 else np.nan
+        q_max_mean = float(np.mean(q_max_values)) if len(q_max_values) > 0 else np.nan
+
         print('episode: %d, total step = %d, total reward = %.2f, avg reward = %.6f, best reward = %.2f, best avg reward = %.6f, epsilon = %.6f' % (i, steps, total_rew, avg_total_rew, best_rew, best_avg_rew, eps))
 
+        if logger is not None:
+            logger.log_train_episode({
+                "run_id": logger.run_id,
+                "seed": seed,
+                "episode": i,
+                "global_step": steps,
+                "episode_len": episode_decision_steps,
+                "train_return": total_rew,
+                "train_score_diff": np.nan,
+                "epsilon": eps,
+                "loss_mean": loss_mean,
+                "td_error_p95": td_error_p95,
+                "q_max_mean": q_max_mean,
+            })
 
-        if i % 25 == 0:
+
+        if i % eval_interval_episodes == 0:
             # 测试agent
-            test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, step_id=steps, env=env)
+            eval_returns = []
+            eval_lengths = []
+            for eval_round in range(eval_episodes):
+                eval_result = test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, step_id=steps, env=env, eps=eval_epsilon, eval_round=eval_round if eval_episodes > 1 else None)
+                if eval_result:
+                    eval_returns.append(eval_result.get("episode_return", np.nan))
+                    eval_lengths.append(eval_result.get("episode_len", np.nan))
+
+            return_mean = float(np.mean(eval_returns)) if len(eval_returns) > 0 else np.nan
+            return_std = float(np.std(eval_returns)) if len(eval_returns) > 0 else np.nan
+            avg_episode_len = float(np.mean(eval_lengths)) if len(eval_lengths) > 0 else np.nan
+
+            if logger is not None:
+                logger.log_eval({
+                    "run_id": logger.run_id,
+                    "seed": seed,
+                    "eval_idx": eval_idx,
+                    "global_step": steps,
+                    "eval_episodes": eval_episodes,
+                    "win_rate": np.nan,  # TODO: derive win/loss reliably once environment score extraction is added.
+                    "draw_rate": np.nan,
+                    "loss_rate": np.nan,
+                    "score_diff_mean": np.nan,  # TODO: replace NaN when score diff is available from env info.
+                    "score_diff_std": np.nan,
+                    "return_mean": return_mean,
+                    "return_std": return_std,
+                    "avg_episode_len": avg_episode_len,
+                })
+                eval_idx += 1
 
     plot_learning_curve(steps_list, total_rews, eps_list, os.path.join(CONFIG['model_dir'], 'pong.png'))
     return steps_list, total_rews, eps_list, None
 
 
-def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None):
+def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None, eps=0.0, eval_round=None):
     global CONFIG
 
     if env is None:
@@ -269,6 +340,7 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     steps = 0
     images = []
     obs = env.reset()
+    episode_return = 0.0
 
     if players == 2:
         agent_1.reset()
@@ -281,7 +353,7 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
             env.step(2, 2)
 
         # 右侧板
-        action_1 = agent_1.select_action(obs, eps=0.0)
+        action_1 = agent_1.select_action(obs, eps=eps)
 
         # 左侧板
         if players == 2 and agent_2 is None:
@@ -292,6 +364,9 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
             action_2 = None
 
         nxt_obs, rew, done, info = env.step(action_1, action_2)
+        if players == 2:
+            rew = rew[0]
+        episode_return += rew
 
         obs = nxt_obs
             
@@ -311,25 +386,36 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     figure = plt.figure(figsize=(10.8, 7.2))
     plt.ion()                                   # 为了可以动态显示
     plt.tight_layout()                          # 尽量减少窗口的留白
-    with writer.saving(figure, os.path.join(CONFIG['video_dir'], 'ep_%d_step_%d.mp4' % (episode, step_id)), 100): 
+    video_name = 'ep_%d_step_%d.mp4' % (episode, step_id) if eval_round is None else 'ep_%d_step_%d_eval%d.mp4' % (episode, step_id, eval_round)
+    with writer.saving(figure, os.path.join(CONFIG['video_dir'], video_name), 100): 
         traverse_imgs(writer, images)
 
-    return info
+    return {
+        "episode_len": steps,
+        "episode_return": episode_return,
+        "raw_info": info,
+    }
 
 
 def main(args):
     global CONFIG
-    # 检查目录是否存在，如果不存在则创建，存在则停止运行，test_mode不需要创建
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    try:
+        import torch
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
+    except ImportError:
+        pass
+    base_checkpoint_root = CONFIG['model_dir']
+    base_video_root = CONFIG['video_dir']
+    agent1_load_dir = os.path.join(base_checkpoint_root, args.memo_1)
+    agent2_load_dir = os.path.join(base_checkpoint_root, args.memo_2)
+    exp_name = args.memo_1 if args.player == 1 else args.memo_1 + '_' + args.memo_2
 
-    if args.player == 2 and not os.path.exists(os.path.join(CONFIG['model_dir'], args.memo_2)):
+    if args.player == 2 and not os.path.exists(agent2_load_dir):
         raise ValueError("agent_2 model is not exists")
-
-    if args.player == 1:
-        CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1)
-        CONFIG['video_dir'] = os.path.join(CONFIG['video_dir'], args.memo_1)
-
-    if not args.test_mode and args.memo_1 != 'test' and args.player != 2 and os.path.exists(CONFIG['model_dir']):
-        raise ValueError("memo is already exists")
 
     if args.player == 1:
         agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
@@ -340,61 +426,108 @@ def main(args):
 
     if args.test_mode:
         if args.player == 2:
-            agent_1.load_model(args.start_step_1, os.path.join(CONFIG['model_dir'], args.memo_1))
-            agent_2.load_model(args.start_step_2, os.path.join(CONFIG['model_dir'], args.memo_2))
+            agent_1.load_model(args.start_step_1, agent1_load_dir)
+            agent_2.load_model(args.start_step_2, agent2_load_dir)
 
-            CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1 + '_' + args.memo_2)
-            CONFIG['video_dir'] = os.path.join(CONFIG['video_dir'], args.memo_1 + '_' + args.memo_2)
+            CONFIG['model_dir'] = os.path.join(base_checkpoint_root, exp_name)
+            CONFIG['video_dir'] = os.path.join(base_video_root, exp_name)
 
             if not os.path.exists(CONFIG['model_dir']):
                 os.makedirs(CONFIG['model_dir'])
             if not os.path.exists(CONFIG['video_dir']):
                 os.makedirs(CONFIG['video_dir'])
         else:
-            if not os.path.exists(CONFIG['model_dir']):
+            if not os.path.exists(agent1_load_dir):
                 raise ValueError("model dir is not exists")
-            if not os.path.exists(CONFIG['video_dir']):
+            if not os.path.exists(os.path.join(base_video_root, args.memo_1)):
                 raise ValueError("video dir is not exists")
             
-            agent_1.load_model(args.start_step_1, CONFIG['model_dir'])
+            agent_1.load_model(args.start_step_1, agent1_load_dir)
+            CONFIG['model_dir'] = agent1_load_dir
+            CONFIG['video_dir'] = os.path.join(base_video_root, args.memo_1)
         
         # 测试agent
         info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, episode=0, step_id=args.start_step_1)
         print(info)
     else:
         if args.player == 2:
-            agent_1.load_model(args.start_step_1, os.path.join(CONFIG['model_dir'], args.memo_1))
-            agent_2.load_model(args.start_step_2, os.path.join(CONFIG['model_dir'], args.memo_2))
-
-
-            CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1 + '_' + args.memo_2)
-            CONFIG['video_dir'] = os.path.join(CONFIG['video_dir'], args.memo_1 + '_' + args.memo_2)
-
-            if not os.path.exists(CONFIG['model_dir']):
-                os.makedirs(CONFIG['model_dir'])
-            if not os.path.exists(CONFIG['video_dir']):
-                os.makedirs(CONFIG['video_dir'])
-
+            if args.start_step_1 > 0:
+                agent_1.load_model(args.start_step_1, agent1_load_dir)
+            if args.start_step_2 > 0:
+                agent_2.load_model(args.start_step_2, agent2_load_dir)
         else:
-            if args.memo_1 != 'test':
-                if os.path.exists(CONFIG['model_dir']):
-                    if args.start_step_1 > 0:
-                        agent_1.load_model(args.start_step_1, CONFIG['model_dir'])
-                else:
-                    os.makedirs(CONFIG['model_dir'])
+            if args.start_step_1 > 0 and os.path.exists(agent1_load_dir):
+                agent_1.load_model(args.start_step_1, agent1_load_dir)
 
-                if not os.path.exists(CONFIG['video_dir']):
-                    os.makedirs(CONFIG['video_dir'])
+        run_id = RunLogger.default_run_id(exp_name, args.seed)
+        run_dir = os.path.join(args.run_root, exp_name, f"seed{args.seed}", run_id)
+        CONFIG['model_dir'] = os.path.join(run_dir, 'checkpoints')
+        CONFIG['video_dir'] = os.path.join(run_dir, 'videos')
+        os.makedirs(CONFIG['model_dir'], exist_ok=True)
+        os.makedirs(CONFIG['video_dir'], exist_ok=True)
 
+        eval_episodes = 1
+        eval_interval_episodes = 25
+        eval_epsilon = 0.0
 
-        # 训练agent
-        steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode)
+        run_logger = RunLogger(run_dir=run_dir, run_id=run_id, seed=args.seed)
+        global active_run_logger
+        active_run_logger = run_logger
+        config_dict = {
+            "exp_name": exp_name,
+            "run_id": run_id,
+            "seed": args.seed,
+            "env_id": "Pong-Atari2600",
+            "game": "Pong",
+            "obs_mode": "stacked_frames",
+            "frame_skip": args.skip_frame,
+            "frame_stack": args.horizon,
+            "action_repeat": None,
+            "players": args.player,
+            "algo": "DQN",
+            "n_step": 1,
+            "loss": "mse",
+            "gamma": agent_1.gamma,
+            "lr": agent_1.lr,
+            "batch_size": agent_1.batch_size,
+            "replay_size": agent_1.memory_size,
+            "target_update_freq": agent_1.target_update_freq,
+            "epsilon_schedule": {
+                "epsilon_max": agent_1.epsilon_max,
+                "epsilon_min": agent_1.epsilon_min,
+                "epsilon_decay": agent_1.epsilon_decay,
+            },
+            "train_freq": 1,
+            "max_episodes": args.total_episode,
+            "eval_episodes": eval_episodes,
+            "eval_epsilon": eval_epsilon,
+            "eval_interval_episodes": eval_interval_episodes,
+            "skip_frame_gamma_exponent": 4,
+            "global_step_definition": "decision_steps_only (obs_process_tool.frame_cnt == 0 updates)",
+            "run_dir": run_dir,
+            "checkpoint_dir": CONFIG['model_dir'],
+            "video_dir": CONFIG['video_dir'],
+        }
+        run_logger.log_config(config_dict)
+
+        try:
+            # 训练agent
+            steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode, logger=run_logger, seed=args.seed, eval_episodes=eval_episodes, eval_epsilon=eval_epsilon, eval_interval_episodes=eval_interval_episodes)
+        finally:
+            run_logger.close()
+            active_run_logger = None
 
         return steps_list, total_rews, eps_list, data
 
 
 def int_handler(signum, frame):
+    global active_run_logger
     plot_learning_curve(steps_list, total_rews, eps_list, os.path.join(CONFIG['model_dir'], 'pong.png'))
+    if active_run_logger is not None:
+        try:
+            active_run_logger.close()
+        except Exception:
+            pass
     exit(0)
 
 

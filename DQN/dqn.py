@@ -65,6 +65,7 @@ class DQNAgent:
         self.batch_size = batch_size
         self.gamma = gamma
         self.lr = lr
+        self.memory_size = memory_size
 
         # 创建两个网络
         self.dqn_net = DQN(self.state_size, self.action_size, skip_frame=skip_frame, horizon=horizon, clip=clip, left=left).to(device)
@@ -77,6 +78,8 @@ class DQNAgent:
         self.epsilon_max = 1.0
         self.epsilon_min = 0.005
         self.epsilon_decay = 0.00001
+        self.target_update_freq = 1000
+        self.skip_frame = skip_frame
 
     def select_action(self, state, eps):
         self.dqn_net.eval()
@@ -103,7 +106,7 @@ class DQNAgent:
 
     def update(self, step):
         if len(self.memory) < self.batch_size:
-            return
+            return None
 
         self.dqn_net.train()
        # 更新target_net
@@ -130,13 +133,25 @@ class DQNAgent:
         q_val = q_vals.gather(1, actions.unsqueeze(-1)).squeeze(-1)
         nxt_q_val = nxt_q_vals.max(1)[0]
 
-        gamma_decision = self.gamma ** 4 # frame skip = 4   
+        # gamma_decision = self.gamma ** 4 # frame skip = 4   
+        gamma_decision = self.gamma ** self.skip_frame
 
         exp_q_val = rewards + gamma_decision * nxt_q_val * (1 - dones)
 
         loss = (q_val - exp_q_val.data.to(device)).pow(2).mean()
         loss.backward()
         self.optimizer.step()
+
+        with torch.no_grad():
+            td_error = (q_val - exp_q_val).detach().abs().cpu().numpy()
+            q_max = q_vals.max(1)[0].detach().cpu().numpy()
+            loss_item = loss.item()
+
+        return {
+            "loss": loss_item,
+            "td_errors": td_error,
+            "q_max": q_max,
+        }
 
 
     def save_model(self, episode, step, path):
@@ -163,7 +178,7 @@ class DQNAgent:
         self.target_net.load_state_dict(torch.load(target_matches[-1]))
 
     def update_target_net(self, step):
-        if step % 1000 == 0:
+        if step % self.target_update_freq == 0:
             self.target_net.load_state_dict(self.dqn_net.state_dict())
 
     def update_epsilon(self, step):
