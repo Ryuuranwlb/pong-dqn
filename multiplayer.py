@@ -43,9 +43,10 @@ def parse_args():
     parser.add_argument("-agent_1", type=str, default='DQN')
     parser.add_argument("-agent_2", type=str, default='DQN')
 
-    parser.add_argument("-start_episode_1", type=int, default=0)
-    parser.add_argument("-start_episode_2", type=int, default=0)
+    parser.add_argument("-start_step_1", type=int, default=0)
+    parser.add_argument("-start_step_2", type=int, default=0)
     parser.add_argument("-total_episode", type=int, default=400)
+    parser.add_argument("-eval_interval_steps", type=int, default=1000)
 
     parser.add_argument("-horizon", type=int, default=4)
     parser.add_argument("-player", type=int, default=1)
@@ -149,8 +150,10 @@ def plot_learning_curve(x, scores, epsilon, filename):
     plt.savefig(filename)
 
 
-def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_episode=0, total_episode=1000):
+def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000, eval_interval_steps=1000):
     global CONFIG
+
+    eval_interval_steps = max(1, eval_interval_steps)
 
     env = PongDiscretizer(retro.make(game='Pong-Atari2600', players=players), players=players)
     env.reset()
@@ -160,9 +163,11 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
     global eps_list
     best_avg_rew = -np.inf
     best_rew = -np.inf
-    steps = 0
+    steps = start_step
+    last_eval_step = steps
+    last_save_step = steps
 
-    for i in range(start_episode, total_episode):
+    for i in range(total_episode):
         done = False
         total_rew = 0.0
         reward_acc = 0.0
@@ -240,20 +245,25 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
 
         if avg_total_rew > best_avg_rew:
             best_avg_rew = avg_total_rew
-            agent_1.save_model(i, CONFIG['model_dir'])
+            agent_1.save_model(steps, CONFIG['model_dir'])
             # if args.player == 2:
             #     agent_2.save_model(i, CONFIG['model_dir'])
 
         print('episode: %d, total step = %d, total reward = %.2f, avg reward = %.6f, best reward = %.2f, best avg reward = %.6f, epsilon = %.6f' % (i, steps, total_rew, avg_total_rew, best_rew, best_avg_rew, eps))
 
-        if i % 25 == 0:
+        if steps - last_save_step >= eval_interval_steps:
+            agent_1.save_model(steps, CONFIG['model_dir'])
+            last_save_step = steps
+
+        if steps - last_eval_step >= eval_interval_steps:
             # 测试agent
-            test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, env=env)
+            test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, step_id=steps, env=env)
+            last_eval_step = steps
 
     plot_learning_curve(steps_list, total_rews, eps_list, os.path.join(CONFIG['model_dir'], 'pong.png'))
 
 
-def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, env=None):
+def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, step_id=0, env=None):
     global CONFIG
 
     if env is None:
@@ -306,7 +316,7 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     figure = plt.figure(figsize=(10.8, 7.2))
     plt.ion()                                   # 为了可以动态显示
     plt.tight_layout()                          # 尽量减少窗口的留白
-    with writer.saving(figure, os.path.join(CONFIG['video_dir'], 'episode_%d.mp4' % episode), 100): 
+    with writer.saving(figure, os.path.join(CONFIG['video_dir'], 'step_%d.mp4' % step_id), 100): 
         traverse_imgs(writer, images)
 
     return info
@@ -335,8 +345,8 @@ def main(args):
 
     if args.test_mode:
         if args.player == 2:
-            agent_1.load_model(args.start_episode_1, os.path.join(CONFIG['model_dir'], args.memo_1))
-            agent_2.load_model(args.start_episode_2, os.path.join(CONFIG['model_dir'], args.memo_2))
+            agent_1.load_model(args.start_step_1, os.path.join(CONFIG['model_dir'], args.memo_1))
+            agent_2.load_model(args.start_step_2, os.path.join(CONFIG['model_dir'], args.memo_2))
 
             CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1 + '_' + args.memo_2)
             CONFIG['video_dir'] = os.path.join(CONFIG['video_dir'], args.memo_1 + '_' + args.memo_2)
@@ -351,15 +361,15 @@ def main(args):
             if not os.path.exists(CONFIG['video_dir']):
                 raise ValueError("video dir is not exists")
             
-            agent_1.load_model(args.start_episode_1, CONFIG['model_dir'])
+            agent_1.load_model(args.start_step_1, CONFIG['model_dir'])
         
         # 测试agent
-        info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, episode=args.start_episode_1)
+        info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, step_id=args.start_step_1)
         print(info)
     else:
         if args.player == 2:
-            agent_1.load_model(args.start_episode_1, os.path.join(CONFIG['model_dir'], args.memo_1))
-            agent_2.load_model(args.start_episode_2, os.path.join(CONFIG['model_dir'], args.memo_2))
+            agent_1.load_model(args.start_step_1, os.path.join(CONFIG['model_dir'], args.memo_1))
+            agent_2.load_model(args.start_step_2, os.path.join(CONFIG['model_dir'], args.memo_2))
 
 
             CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1 + '_' + args.memo_2)
@@ -373,7 +383,8 @@ def main(args):
         else:
             if args.memo_1 != 'test':
                 if os.path.exists(CONFIG['model_dir']):
-                    agent_1.load_model(args.start_episode_1 - 1, CONFIG['model_dir'])
+                    if args.start_step_1 > 0:
+                        agent_1.load_model(args.start_step_1, CONFIG['model_dir'])
                 else:
                     os.makedirs(CONFIG['model_dir'])
 
@@ -382,7 +393,7 @@ def main(args):
 
 
         # 训练agent
-        steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_episode=args.start_episode_1, total_episode=args.total_episode)
+        steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode, eval_interval_steps=args.eval_interval_steps)
 
         return steps_list, total_rews, eps_list, data
 

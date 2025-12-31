@@ -138,13 +138,13 @@ class DQNAgent:
         self.optimizer.step()
 
 
-    def save_model(self, episode, path):
-        torch.save(self.dqn_net.state_dict(), os.path.join(path, 'eval_checkpoint_{}.pth'.format(episode)))
-        torch.save(self.target_net.state_dict(), os.path.join(path, 'target_checkpoint_{}.pth'.format(episode)))
+    def save_model(self, step, path):
+        torch.save(self.dqn_net.state_dict(), os.path.join(path, 'eval_checkpoint_{}.pth'.format(step)))
+        torch.save(self.target_net.state_dict(), os.path.join(path, 'target_checkpoint_{}.pth'.format(step)))
 
-    def load_model(self, episode, path):
-        self.dqn_net.load_state_dict(torch.load(os.path.join(path, 'eval_checkpoint_{}.pth'.format(episode))))
-        self.target_net.load_state_dict(torch.load(os.path.join(path, 'target_checkpoint_{}.pth'.format(episode))))
+    def load_model(self, step, path):
+        self.dqn_net.load_state_dict(torch.load(os.path.join(path, 'eval_checkpoint_{}.pth'.format(step))))
+        self.target_net.load_state_dict(torch.load(os.path.join(path, 'target_checkpoint_{}.pth'.format(step))))
 
     def update_target_net(self, step):
         if step % 1000 == 0:
