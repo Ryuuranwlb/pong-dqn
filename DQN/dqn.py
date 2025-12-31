@@ -128,7 +128,10 @@ class DQNAgent:
         # exit()
         q_val = q_vals.gather(1, actions.unsqueeze(-1)).squeeze(-1)
         nxt_q_val = nxt_q_vals.max(1)[0]
-        exp_q_val = rewards + self.gamma * nxt_q_val * (1 - dones)
+
+        gamma_decision = self.gamma ** 4 # frame skip = 4   
+
+        exp_q_val = rewards + gamma_decision * nxt_q_val * (1 - dones)
 
         loss = (q_val - exp_q_val.data.to(device)).pow(2).mean()
         loss.backward()
