@@ -216,9 +216,18 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
             last_done = done
             
         if last_state is not None and last_done:
-            agent_1.memory_push(last_state, last_action, last_state, reward_acc, True)
+            # 尝试用 terminal 的 obs 构造更合理的 next_state
+            code, terminal_state = agent_1.dqn_net.obs_process_tool.process(obs)
+            if code == 0:
+                next_state = terminal_state
+            else:
+                # 没到决策边界（skip_frame 未对齐）时，退化为当前缓存里的状态
+                next_state = agent_1.dqn_net.obs_process_tool.obs
+
+            agent_1.memory_push(last_state, last_action, next_state, reward_acc, True)
             agent_1.update(steps)
             steps += 1
+
 
         total_rews.append(total_rew)
         steps_list.append(steps)
@@ -368,8 +377,9 @@ def main(args):
                 else:
                     os.makedirs(CONFIG['model_dir'])
 
-                if os.path.exists(CONFIG['video_dir']):
+                if not os.path.exists(CONFIG['video_dir']):
                     os.makedirs(CONFIG['video_dir'])
+
 
         # 训练agent
         steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_episode=args.start_episode_1, total_episode=args.total_episode)
