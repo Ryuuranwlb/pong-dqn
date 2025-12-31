@@ -279,7 +279,8 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
         q_max_mean = float(np.mean(q_max_values)) if len(q_max_values) > 0 else np.nan
         train_score_diff = np.nan
         if last_info is not None and 'score1' in last_info and 'score2' in last_info:
-            train_score_diff = float(last_info['score1'] - last_info['score2'])
+            # agent1 分数是 score2 也就是右侧板
+            train_score_diff = float(last_info['score2'] - last_info['score1'])
 
         print('episode: %d, total step = %d, total reward = %.2f, avg reward = %.6f, best reward = %.2f, best avg reward = %.6f, epsilon = %.6f' % (i, steps, total_rew, avg_total_rew, best_rew, best_avg_rew, eps))
 
@@ -417,7 +418,8 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     if last_info is not None and 'score1' in last_info and 'score2' in last_info:
         score1 = last_info['score1']
         score2 = last_info['score2']
-        score_diff = float(score1 - score2)
+        # agent1 分数是 score2 也就是右侧板
+        score_diff = float(score2 - score1)
 
     win = draw = loss = 0
     if not np.isnan(score_diff):
@@ -530,26 +532,31 @@ def main(args):
             "action_repeat": None,
             "players": args.player,
             "algo": "DQN",
+            "algo_variant": agent_1.algo_variant,
             "n_step": 1,
             "loss": args.loss,
+            "loss_type": args.loss,
             "gamma": agent_1.gamma,
             "lr": agent_1.lr,
             "batch_size": agent_1.batch_size,
             "replay_size": agent_1.memory_size,
             "target_update_freq": agent_1.target_update_freq,
+            "action_size": agent_1.action_size,
             "epsilon_schedule": {
                 "epsilon_max": agent_1.epsilon_max,
                 "epsilon_min": agent_1.epsilon_min,
                 "epsilon_decay": agent_1.epsilon_decay,
             },
             "train_freq": 1,
+            "double": agent_1.double,
+            "dueling": agent_1.dueling,
             "max_episodes": args.total_episode,
             "eval_episodes": eval_episodes,
             "eval_epsilon": eval_epsilon,
             "eval_interval_episodes": eval_interval_episodes,
-            "skip_frame_gamma_exponent": 4,
+            "skip_frame_gamma_exponent": args.skip_frame,
             "global_step_definition": "decision_steps_only (obs_process_tool.frame_cnt == 0 updates)",
-            "score_diff_definition": "score1 - score2 from env.info at episode end; win if score_diff > 0, draw if ==0, loss otherwise",
+            "score_diff_definition": "score2 - score1 from env.info at episode end; win if score_diff > 0, draw if ==0, loss otherwise",
             "run_dir": run_dir,
             "checkpoint_dir": CONFIG['model_dir'],
             "video_dir": CONFIG['video_dir'],
