@@ -160,13 +160,15 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
     global eps_list
     best_avg_rew = -np.inf
     best_rew = -np.inf
-    pre_action_1 = 2
     steps = 0
 
     for i in range(start_episode, total_episode):
         done = False
         total_rew = 0.0
-        skip_rew = 0.0
+        reward_acc = 0.0
+        last_state = None
+        last_action = None
+        last_done = False
         obs = env.reset()
         
         if players == 2:
@@ -184,6 +186,16 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
 
             # 右侧板
             action_1 = agent_1.select_action(obs, eps)
+            if agent_1.dqn_net.obs_process_tool.frame_cnt == 0:
+                current_state = agent_1.dqn_net.obs_process_tool.obs
+                if last_state is not None:
+                    agent_1.memory_push(last_state, last_action, current_state, reward_acc, last_done)
+                    agent_1.update(steps)
+                    steps += 1
+                    reward_acc = 0.0
+                last_state = current_state
+                last_action = action_1
+                last_done = False
 
             # 左侧板
             if players == 2 and agent_2 is None:
@@ -199,16 +211,14 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
             obs = nxt_obs
             if players == 2:
                 rew = rew[0]
-            skip_rew += rew
             total_rew += rew
-
-            if agent_1.dqn_net.obs_process_tool.frame_cnt == 0:
-                agent_1.memory_push(agent_1.dqn_net.obs_process_tool.pre_obs, pre_action_1, agent_1.dqn_net.obs_process_tool.obs, skip_rew, done)
-                agent_1.update(steps)
-                pre_action_1 = action_1
-                steps += 1
-                skip_rew = 0.0
+            reward_acc += rew
+            last_done = done
             
+        if last_state is not None and last_done:
+            agent_1.memory_push(last_state, last_action, last_state, reward_acc, True)
+            agent_1.update(steps)
+            steps += 1
 
         total_rews.append(total_rew)
         steps_list.append(steps)
