@@ -2,4 +2,5 @@ __pycache__
 checkpoints/*
 */__pycache__
 videos/*
-runs/*
+runs*/*
+plots*/*
