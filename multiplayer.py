@@ -57,6 +57,7 @@ def parse_args():
     parser.add_argument("-skip_frame", type=int, default=4)
     parser.add_argument("-run_root", type=str, default='runs')
     parser.add_argument("--loss", type=str, default="mse", choices=["mse", "huber"])
+    parser.add_argument("--n_step", type=int, default=1)
     
     return parser.parse_args()
 
@@ -464,11 +465,11 @@ def main(args):
         raise ValueError("agent_2 model is not exists")
 
     if args.player == 1:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss)
+        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss, n_step=args.n_step)
         agent_2 = None
     elif args.player == 2:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss)
-        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss)
+        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss, n_step=args.n_step)
+        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss, n_step=args.n_step)
 
     if args.test_mode:
         if args.player == 2:
@@ -533,10 +534,12 @@ def main(args):
             "players": args.player,
             "algo": "DQN",
             "algo_variant": agent_1.algo_variant,
-            "n_step": 1,
+            "n_step": args.n_step,
             "loss": args.loss,
             "loss_type": args.loss,
             "gamma": agent_1.gamma,
+            "gamma_decision": agent_1.gamma_decision,
+            "gamma_n": agent_1.gamma_decision ** agent_1.n_step,
             "lr": agent_1.lr,
             "batch_size": agent_1.batch_size,
             "replay_size": agent_1.memory_size,
@@ -556,6 +559,8 @@ def main(args):
             "eval_interval_episodes": eval_interval_episodes,
             "skip_frame_gamma_exponent": args.skip_frame,
             "global_step_definition": "decision_steps_only (obs_process_tool.frame_cnt == 0 updates)",
+            "gamma_decision_definition": "gamma ** skip_frame (decision-step discount)",
+            "gamma_n_definition": "gamma_decision ** n_step (discount for n-step bootstrap)",
             "score_diff_definition": "score2 - score1 from env.info at episode end; win if score_diff > 0, draw if ==0, loss otherwise",
             "run_dir": run_dir,
             "checkpoint_dir": CONFIG['model_dir'],
