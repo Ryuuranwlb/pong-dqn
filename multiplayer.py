@@ -56,6 +56,7 @@ def parse_args():
     parser.add_argument("-player", type=int, default=1)
     parser.add_argument("-skip_frame", type=int, default=4)
     parser.add_argument("-run_root", type=str, default='runs')
+    parser.add_argument("--loss", type=str, default="mse", choices=["mse", "huber"])
     
     return parser.parse_args()
 
@@ -178,6 +179,7 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
         last_action = None
         last_done = False
         obs = env.reset()
+        last_info = None
         episode_decision_steps = 0
         losses = []
         td_errors = []
@@ -229,6 +231,7 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
             nxt_obs, rew, done, info = env.step(action_1, action_2)
             
             obs = nxt_obs
+            last_info = info
             if players == 2:
                 rew = rew[0]
             total_rew += rew
@@ -274,6 +277,9 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
         loss_mean = float(np.mean(losses)) if len(losses) > 0 else np.nan
         td_error_p95 = float(np.percentile(np.asarray(td_errors), 95)) if len(td_errors) > 0 else np.nan
         q_max_mean = float(np.mean(q_max_values)) if len(q_max_values) > 0 else np.nan
+        train_score_diff = np.nan
+        if last_info is not None and 'score1' in last_info and 'score2' in last_info:
+            train_score_diff = float(last_info['score1'] - last_info['score2'])
 
         print('episode: %d, total step = %d, total reward = %.2f, avg reward = %.6f, best reward = %.2f, best avg reward = %.6f, epsilon = %.6f' % (i, steps, total_rew, avg_total_rew, best_rew, best_avg_rew, eps))
 
@@ -285,27 +291,40 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
                 "global_step": steps,
                 "episode_len": episode_decision_steps,
                 "train_return": total_rew,
-                "train_score_diff": np.nan,
+                "train_score_diff": train_score_diff,
                 "epsilon": eps,
                 "loss_mean": loss_mean,
                 "td_error_p95": td_error_p95,
                 "q_max_mean": q_max_mean,
             })
 
-
-        if i % eval_interval_episodes == 0:
+        if (i % eval_interval_episodes == 0) or (i == total_episode - 1):
             # 测试agent
             eval_returns = []
             eval_lengths = []
+            eval_score_diffs = []
+            eval_wins = []
+            eval_draws = []
+            eval_losses = []
             for eval_round in range(eval_episodes):
                 eval_result = test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, step_id=steps, env=env, eps=eval_epsilon, eval_round=eval_round if eval_episodes > 1 else None)
                 if eval_result:
                     eval_returns.append(eval_result.get("episode_return", np.nan))
                     eval_lengths.append(eval_result.get("episode_len", np.nan))
+                    eval_score_diffs.append(eval_result.get("score_diff", np.nan))
+                    eval_wins.append(eval_result.get("win", 0))
+                    eval_draws.append(eval_result.get("draw", 0))
+                    eval_losses.append(eval_result.get("loss", 0))
 
             return_mean = float(np.mean(eval_returns)) if len(eval_returns) > 0 else np.nan
             return_std = float(np.std(eval_returns)) if len(eval_returns) > 0 else np.nan
             avg_episode_len = float(np.mean(eval_lengths)) if len(eval_lengths) > 0 else np.nan
+            score_diff_mean = float(np.mean(eval_score_diffs)) if len(eval_score_diffs) > 0 else np.nan
+            score_diff_std = float(np.std(eval_score_diffs)) if len(eval_score_diffs) > 0 else np.nan
+            total_eval = max(len(eval_wins), 1)
+            win_rate = float(np.sum(eval_wins) / total_eval) if total_eval > 0 else np.nan
+            draw_rate = float(np.sum(eval_draws) / total_eval) if total_eval > 0 else np.nan
+            loss_rate = float(np.sum(eval_losses) / total_eval) if total_eval > 0 else np.nan
 
             if logger is not None:
                 logger.log_eval({
@@ -314,11 +333,11 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
                     "eval_idx": eval_idx,
                     "global_step": steps,
                     "eval_episodes": eval_episodes,
-                    "win_rate": np.nan,  # TODO: derive win/loss reliably once environment score extraction is added.
-                    "draw_rate": np.nan,
-                    "loss_rate": np.nan,
-                    "score_diff_mean": np.nan,  # TODO: replace NaN when score diff is available from env info.
-                    "score_diff_std": np.nan,
+                    "win_rate": win_rate,
+                    "draw_rate": draw_rate,
+                    "loss_rate": loss_rate,
+                    "score_diff_mean": score_diff_mean,
+                    "score_diff_std": score_diff_std,
                     "return_mean": return_mean,
                     "return_std": return_std,
                     "avg_episode_len": avg_episode_len,
@@ -341,6 +360,7 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     images = []
     obs = env.reset()
     episode_return = 0.0
+    last_info = None
 
     if players == 2:
         agent_1.reset()
@@ -367,6 +387,7 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
         if players == 2:
             rew = rew[0]
         episode_return += rew
+        last_info = info
 
         obs = nxt_obs
             
@@ -390,9 +411,32 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
     with writer.saving(figure, os.path.join(CONFIG['video_dir'], video_name), 100): 
         traverse_imgs(writer, images)
 
+    score_diff = np.nan
+    score1 = None
+    score2 = None
+    if last_info is not None and 'score1' in last_info and 'score2' in last_info:
+        score1 = last_info['score1']
+        score2 = last_info['score2']
+        score_diff = float(score1 - score2)
+
+    win = draw = loss = 0
+    if not np.isnan(score_diff):
+        if score_diff > 0:
+            win = 1
+        elif score_diff < 0:
+            loss = 1
+        else:
+            draw = 1
+
     return {
         "episode_len": steps,
         "episode_return": episode_return,
+        "score1": score1,
+        "score2": score2,
+        "score_diff": score_diff,
+        "win": win,
+        "draw": draw,
+        "loss": loss,
         "raw_info": info,
     }
 
@@ -418,11 +462,11 @@ def main(args):
         raise ValueError("agent_2 model is not exists")
 
     if args.player == 1:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
+        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss)
         agent_2 = None
     elif args.player == 2:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
-        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
+        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss)
+        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss)
 
     if args.test_mode:
         if args.player == 2:
@@ -467,7 +511,8 @@ def main(args):
         os.makedirs(CONFIG['video_dir'], exist_ok=True)
 
         eval_episodes = 1
-        eval_interval_episodes = 25
+        p = 0.0625
+        eval_interval_episodes = max(1, int(args.total_episode * p))
         eval_epsilon = 0.0
 
         run_logger = RunLogger(run_dir=run_dir, run_id=run_id, seed=args.seed)
@@ -486,7 +531,7 @@ def main(args):
             "players": args.player,
             "algo": "DQN",
             "n_step": 1,
-            "loss": "mse",
+            "loss": args.loss,
             "gamma": agent_1.gamma,
             "lr": agent_1.lr,
             "batch_size": agent_1.batch_size,
@@ -504,6 +549,7 @@ def main(args):
             "eval_interval_episodes": eval_interval_episodes,
             "skip_frame_gamma_exponent": 4,
             "global_step_definition": "decision_steps_only (obs_process_tool.frame_cnt == 0 updates)",
+            "score_diff_definition": "score1 - score2 from env.info at episode end; win if score_diff > 0, draw if ==0, loss otherwise",
             "run_dir": run_dir,
             "checkpoint_dir": CONFIG['model_dir'],
             "video_dir": CONFIG['video_dir'],

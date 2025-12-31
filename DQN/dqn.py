@@ -59,13 +59,20 @@ class DQN(nn.Module):
 
 # 定义代理类
 class DQNAgent:
-    def __init__(self, state_size, action_size, batch_size=64, gamma=0.99, lr=0.0001, memory_size=20000, skip_frame=4, horizon=4, clip=False, left=False):
+    def __init__(self, state_size, action_size, batch_size=64, gamma=0.99, lr=0.0001, memory_size=20000, skip_frame=4, horizon=4, clip=False, left=False, loss_type="mse"):
         self.state_size = state_size
         self.action_size = action_size
         self.batch_size = batch_size
         self.gamma = gamma
         self.lr = lr
         self.memory_size = memory_size
+        self.loss_type = loss_type.lower()
+        if self.loss_type == "mse":
+            self.loss_fn = nn.MSELoss(reduction="mean")
+        elif self.loss_type == "huber":
+            self.loss_fn = nn.SmoothL1Loss(reduction="mean")
+        else:
+            raise ValueError("Unsupported loss_type: {}".format(loss_type))
 
         # 创建两个网络
         self.dqn_net = DQN(self.state_size, self.action_size, skip_frame=skip_frame, horizon=horizon, clip=clip, left=left).to(device)
@@ -137,8 +144,7 @@ class DQNAgent:
         gamma_decision = self.gamma ** self.skip_frame
 
         exp_q_val = rewards + gamma_decision * nxt_q_val * (1 - dones)
-
-        loss = (q_val - exp_q_val.data.to(device)).pow(2).mean()
+        loss = self.loss_fn(q_val, exp_q_val.detach())
         loss.backward()
         self.optimizer.step()
 
