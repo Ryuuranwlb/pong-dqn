@@ -50,7 +50,7 @@ def parse_args():
 
     parser.add_argument("-start_step_1", type=int, default=0)
     parser.add_argument("-start_step_2", type=int, default=0)
-    parser.add_argument("-total_episode", type=int, default=5)
+    parser.add_argument("-total_episode", type=int, default=400)
 
     parser.add_argument("-horizon", type=int, default=4)
     parser.add_argument("-player", type=int, default=1)
