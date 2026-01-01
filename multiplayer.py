@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument("-test_mode", action="store_true", default=False)
     parser.add_argument("-memo_1", type=str, default='test')
     parser.add_argument("-memo_2", type=str, default='test')
-    parser.add_argument("-seed", type=int, default=233)
+    parser.add_argument("-seed", type=int, default=0)
 
     parser.add_argument("-agent_1", type=str, default='DQN')
     parser.add_argument("-agent_2", type=str, default='DQN')
