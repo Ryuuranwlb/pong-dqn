@@ -1,3 +1,8 @@
 /.idea
 /__pycache__
 /checkpoints
+*.md
+runs*/*
+videos/*
+plots*/*
+*__pycache__*
