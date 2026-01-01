@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument("-test_mode", action="store_true", default=False)
     parser.add_argument("-memo_1", type=str, default='test')
     parser.add_argument("-memo_2", type=str, default='test')
-    parser.add_argument("-seed", type=int, default=0)
+    parser.add_argument("-seed", type=int, default=233)
 
     parser.add_argument("-agent_1", type=str, default='DQN')
     parser.add_argument("-agent_2", type=str, default='DQN')
@@ -58,6 +58,7 @@ def parse_args():
     parser.add_argument("-run_root", type=str, default='runs')
     parser.add_argument("--loss", type=str, default="mse", choices=["mse", "huber"])
     parser.add_argument("--n_step", type=int, default=1)
+    parser.add_argument("-eval_episodes", type=int, default=2)
     
     return parser.parse_args()
 
@@ -309,7 +310,8 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
             eval_draws = []
             eval_losses = []
             for eval_round in range(eval_episodes):
-                eval_result = test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, step_id=steps, env=env, eps=eval_epsilon, eval_round=eval_round if eval_episodes > 1 else None)
+                save_video = (eval_round == 0)
+                eval_result = test(agent_1, agent_2, players=players, skip_frame=skip_frame, horizon=horizon, max_steps=max_steps, episode=i, step_id=steps, env=env, eps=eval_epsilon, eval_round=eval_round if eval_episodes > 1 else None, save_video=save_video)
                 if eval_result:
                     eval_returns.append(eval_result.get("episode_return", np.nan))
                     eval_lengths.append(eval_result.get("episode_len", np.nan))
@@ -350,7 +352,7 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
     return steps_list, total_rews, eps_list, None
 
 
-def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None, eps=0.0, eval_round=None):
+def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None, eps=0.0, eval_round=None, save_video=True):
     global CONFIG
 
     if env is None:
@@ -395,23 +397,24 @@ def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=25
             
         if agent_1.dqn_net.obs_process_tool.frame_cnt == 0:
             steps += 1
-            if steps % 8 == 0:
+            if save_video and steps % 8 == 0:
                 images.append(env.render(mode='rgb_array'))
 
         if steps > max_steps:
             break
 
 
-    # 创建video writer, 设置好相应参数，fps
-    metadata = dict(title='01', artist='Matplotlib',comment='depth prediiton')
-    writer = FFMpegWriter(fps=10, metadata=metadata)
+    if save_video:
+        # 创建video writer, 设置好相应参数，fps
+        metadata = dict(title='01', artist='Matplotlib',comment='depth prediiton')
+        writer = FFMpegWriter(fps=10, metadata=metadata)
 
-    figure = plt.figure(figsize=(10.8, 7.2))
-    plt.ion()                                   # 为了可以动态显示
-    plt.tight_layout()                          # 尽量减少窗口的留白
-    video_name = 'ep_%d_step_%d.mp4' % (episode, step_id) if eval_round is None else 'ep_%d_step_%d_eval%d.mp4' % (episode, step_id, eval_round)
-    with writer.saving(figure, os.path.join(CONFIG['video_dir'], video_name), 100): 
-        traverse_imgs(writer, images)
+        figure = plt.figure(figsize=(10.8, 7.2))
+        plt.ion()                                   # 为了可以动态显示
+        plt.tight_layout()                          # 尽量减少窗口的留白
+        video_name = 'ep_%d_step_%d.mp4' % (episode, step_id) if eval_round is None else 'ep_%d_step_%d_eval%d.mp4' % (episode, step_id, eval_round)
+        with writer.saving(figure, os.path.join(CONFIG['video_dir'], video_name), 100): 
+            traverse_imgs(writer, images)
 
     score_diff = np.nan
     score1 = None
@@ -513,9 +516,10 @@ def main(args):
         os.makedirs(CONFIG['model_dir'], exist_ok=True)
         os.makedirs(CONFIG['video_dir'], exist_ok=True)
 
-        eval_episodes = 1
-        p = 0.0625
-        eval_interval_episodes = max(1, int(args.total_episode * p))
+        eval_episodes = args.eval_episodes
+        # p = 0.0625
+        # eval_interval_episodes = max(1, int(args.total_episode * p))
+        eval_interval_episodes = max(1, args.total_episode // 25)
         eval_epsilon = 0.0
 
         run_logger = RunLogger(run_dir=run_dir, run_id=run_id, seed=args.seed)
