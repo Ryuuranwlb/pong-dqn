@@ -21,6 +21,7 @@ from gym.spaces import Box
 from collections import deque
 from utils.process_obs_tool import ObsProcessTool
 from utils.logger import RunLogger
+from utils.reward_shaping import RewardShapingWrapper
 
 import signal
 
@@ -43,7 +44,7 @@ def parse_args():
     parser.add_argument("-test_mode", action="store_true", default=False)
     parser.add_argument("-memo_1", type=str, default='test')
     parser.add_argument("-memo_2", type=str, default='test')
-    parser.add_argument("-seed", type=int, default=233)
+    parser.add_argument("-seed", type=int, default=0)
 
     parser.add_argument("-agent_1", type=str, default='DQN')
     parser.add_argument("-agent_2", type=str, default='DQN')
@@ -59,6 +60,9 @@ def parse_args():
     parser.add_argument("--loss", type=str, default="mse", choices=["mse", "huber"])
     parser.add_argument("--n_step", type=int, default=1)
     parser.add_argument("-eval_episodes", type=int, default=2)
+    parser.add_argument("--reward_shaping", type=str, choices=["none", "score_delta"], default="none")
+    parser.add_argument("--alpha", type=float, default=0.2)
+    parser.add_argument("--beta", type=float, default=0.2)
     
     return parser.parse_args()
 
@@ -158,11 +162,12 @@ def plot_learning_curve(x, scores, epsilon, filename):
     plt.savefig(filename)
 
 
-def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000, logger=None, seed=0, eval_episodes=1, eval_epsilon=0.0, eval_interval_episodes=25):
+def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, start_step=0, total_episode=1000, logger=None, seed=0, eval_episodes=1, eval_epsilon=0.0, eval_interval_episodes=25, reward_shaping_mode="none", reward_alpha=0.2, reward_beta=0.2):
     global CONFIG
 
 
-    env = PongDiscretizer(retro.make(game='Pong-Atari2600', players=players), players=players)
+    base_env = PongDiscretizer(retro.make(game='Pong-Atari2600', players=players), players=players)
+    env = RewardShapingWrapper(base_env, mode=reward_shaping_mode, alpha=reward_alpha, beta=reward_beta)
     env.reset()
 
     global total_rews
@@ -352,11 +357,12 @@ def train(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2
     return steps_list, total_rews, eps_list, None
 
 
-def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None, eps=0.0, eval_round=None, save_video=True):
+def test(agent_1, agent_2=None, players=1, skip_frame=2, horizon=2, max_steps=2500, episode=0, step_id=0, env=None, eps=0.0, eval_round=None, save_video=True, reward_shaping_mode="none", reward_alpha=0.2, reward_beta=0.2):
     global CONFIG
 
     if env is None:
-        env = PongDiscretizer(retro.make(game='Pong-Atari2600', players=players), players=players)
+        base_env = PongDiscretizer(retro.make(game='Pong-Atari2600', players=players), players=players)
+        env = RewardShapingWrapper(base_env, mode=reward_shaping_mode, alpha=reward_alpha, beta=reward_beta)
         env.reset()
 
     done = False
@@ -497,7 +503,7 @@ def main(args):
             CONFIG['video_dir'] = os.path.join(base_video_root, args.memo_1)
         
         # 测试agent
-        info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, episode=0, step_id=args.start_step_1)
+        info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, episode=0, step_id=args.start_step_1, reward_shaping_mode=args.reward_shaping, reward_alpha=args.alpha, reward_beta=args.beta)
         print(info)
     else:
         if args.player == 2:
@@ -561,6 +567,12 @@ def main(args):
             "eval_episodes": eval_episodes,
             "eval_epsilon": eval_epsilon,
             "eval_interval_episodes": eval_interval_episodes,
+            "reward_shaping": {
+                "mode": args.reward_shaping,
+                "alpha": args.alpha,
+                "beta": args.beta,
+            },
+            "reward_definition": "shaped_reward = base_reward + shaping_bonus; bonus from score2/score1 deltas",
             "skip_frame_gamma_exponent": args.skip_frame,
             "global_step_definition": "decision_steps_only (obs_process_tool.frame_cnt == 0 updates)",
             "gamma_decision_definition": "gamma ** skip_frame (decision-step discount)",
@@ -574,7 +586,7 @@ def main(args):
 
         try:
             # 训练agent
-            steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode, logger=run_logger, seed=args.seed, eval_episodes=eval_episodes, eval_epsilon=eval_epsilon, eval_interval_episodes=eval_interval_episodes)
+            steps_list, total_rews, eps_list, data = train(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, start_step=args.start_step_1, total_episode=args.total_episode, logger=run_logger, seed=args.seed, eval_episodes=eval_episodes, eval_epsilon=eval_epsilon, eval_interval_episodes=eval_interval_episodes, reward_shaping_mode=args.reward_shaping, reward_alpha=args.alpha, reward_beta=args.beta)
         finally:
             run_logger.close()
             active_run_logger = None
