@@ -59,7 +59,7 @@ def parse_args():
     parser.add_argument("-run_root", type=str, default='runs')
     parser.add_argument("--loss", type=str, default="mse", choices=["mse", "huber"])
     parser.add_argument("--n_step", type=int, default=1)
-    parser.add_argument("-eval_episodes", type=int, default=2)
+    parser.add_argument("-eval_episodes", type=int, default=1)
     parser.add_argument("--reward_shaping", type=str, choices=["none", "score_delta"], default="none")
     parser.add_argument("--alpha", type=float, default=0.2)
     parser.add_argument("--beta", type=float, default=0.2)
