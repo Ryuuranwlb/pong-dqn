@@ -37,7 +37,7 @@ eps_list = []
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-test_mode", action="store_true", default=False)
-    parser.add_argument("-memo_1", type=str, default='teacher_original')
+    parser.add_argument("-memo_1", type=str, default='teacher_ori')
     parser.add_argument("-memo_2", type=str, default='test')
 
     parser.add_argument("-agent_1", type=str, default='DQN')
@@ -358,7 +358,7 @@ def main(args):
                 else:
                     os.makedirs(CONFIG['model_dir'])
 
-                if os.path.exists(CONFIG['video_dir']):
+                if not os.path.exists(CONFIG['video_dir']):
                     os.makedirs(CONFIG['video_dir'])
 
         # 训练agent
