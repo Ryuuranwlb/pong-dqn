@@ -5,3 +5,4 @@ videos/*
 runs*/*
 plots*/*
 *.md
+dbg

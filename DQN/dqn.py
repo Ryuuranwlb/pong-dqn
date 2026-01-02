@@ -32,6 +32,7 @@ class DQN(nn.Module):
         self.obs_process_tool = ObsProcessTool(skip_frame=skip_frame, horizon=horizon, clip=clip, flip=left)
         self.pre_action = 2
 
+
     def calculate_conv_output_dims(self, input_dims):
         state = torch.zeros(1, *input_dims)
         dims = self.conv1(state)
@@ -112,6 +113,10 @@ class DQNAgent:
         self.skip_frame = skip_frame
         self.gamma_decision = self.gamma ** self.skip_frame
         self.algo_variant = self._build_algo_variant()
+
+    def set_left(self, left: bool):
+        self.dqn_net.obs_process_tool.flip = left
+        self.target_net.obs_process_tool.flip = left
 
     def select_action(self, state, eps):
         self.dqn_net.eval()

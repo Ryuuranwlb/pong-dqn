@@ -59,6 +59,8 @@ def parse_args():
     parser.add_argument("--loss", type=str, default="mse", choices=["mse", "huber"])
     parser.add_argument("--n_step", type=int, default=1)
     parser.add_argument("-eval_episodes", type=int, default=2)
+    parser.add_argument("-train_left", action="store_true", default=False)
+    parser.add_argument("-flip2", action="store_true", default=False)
     
     return parser.parse_args()
 
@@ -468,16 +470,17 @@ def main(args):
         raise ValueError("agent_2 model is not exists")
 
     if args.player == 1:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss, n_step=args.n_step)
+        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.train_left, loss_type=args.loss, n_step=args.n_step)
         agent_2 = None
     elif args.player == 2:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss, n_step=args.n_step)
-        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False, loss_type=args.loss, n_step=args.n_step)
+        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.train_left, loss_type=args.loss, n_step=args.n_step)
+        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.flip2, loss_type=args.loss, n_step=args.n_step)
 
     if args.test_mode:
         if args.player == 2:
             agent_1.load_model(args.start_step_1, agent1_load_dir)
             agent_2.load_model(args.start_step_2, agent2_load_dir)
+            agent_2.set_left(args.flip2)
 
             CONFIG['model_dir'] = os.path.join(base_checkpoint_root, exp_name)
             CONFIG['video_dir'] = os.path.join(base_video_root, exp_name)
@@ -505,6 +508,7 @@ def main(args):
                 agent_1.load_model(args.start_step_1, agent1_load_dir)
             if args.start_step_2 > 0:
                 agent_2.load_model(args.start_step_2, agent2_load_dir)
+                agent_2.set_left(args.flip2)
         else:
             if args.start_step_1 > 0 and os.path.exists(agent1_load_dir):
                 agent_1.load_model(args.start_step_1, agent1_load_dir)
