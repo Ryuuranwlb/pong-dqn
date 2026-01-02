@@ -68,12 +68,12 @@ def get_label(run_dir: Path, cfg: Dict, group_keys: Optional[List[str]] = None) 
     suffix = []
     if seed is not None:
         suffix.append(f"seed={seed}")
-    if run_id is not None:
+    # if run_id is not None:
         # shorten if too long
-        rid = str(run_id)
-        suffix.append(f"id={rid[:8]}")
-    if suffix:
-        return base + " (" + ", ".join(suffix) + ")"
+        # rid = str(run_id)
+        # suffix.append(f"id={rid[:8]}")
+    # if suffix:
+        # return base + " (" + ", ".join(suffix) + ")"
     return base
 
 

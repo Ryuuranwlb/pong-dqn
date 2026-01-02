@@ -4,3 +4,4 @@ checkpoints/*
 videos/*
 runs*/*
 plots*/*
+*.md
