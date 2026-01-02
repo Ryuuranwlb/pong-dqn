@@ -6,3 +6,5 @@ runs*/*
 plots*/*
 *.md
 dbg
+usage.sh
+final_submit/*
