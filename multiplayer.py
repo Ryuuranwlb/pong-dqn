@@ -50,6 +50,18 @@ def parse_args():
     parser.add_argument("-horizon", type=int, default=4)
     parser.add_argument("-player", type=int, default=1)
     parser.add_argument("-skip_frame", type=int, default=4)
+    parser.add_argument(
+        "-flip_1",
+        action="store_true",
+        default=False,
+        help="Whether to horizontally flip observations for agent_1 during preprocessing.",
+    )
+    parser.add_argument(
+        "-flip_2",
+        action="store_true",
+        default=False,
+        help="Whether to horizontally flip observations for agent_2 during preprocessing.",
+    )
     
     return parser.parse_args()
 
@@ -308,11 +320,32 @@ def main(args):
         raise ValueError("memo is already exists")
 
     if args.player == 1:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
+        agent_1 = AGENT[args.agent_1](
+            state_size=(args.horizon, 84, 84),
+            action_size=3,
+            skip_frame=args.skip_frame,
+            horizon=args.horizon,
+            clip=False,
+            left=args.flip_1,
+        )
         agent_2 = None
     elif args.player == 2:
-        agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
-        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=False)
+        agent_1 = AGENT[args.agent_1](
+            state_size=(args.horizon, 84, 84),
+            action_size=3,
+            skip_frame=args.skip_frame,
+            horizon=args.horizon,
+            clip=False,
+            left=args.flip_1,
+        )
+        agent_2 = AGENT[args.agent_2](
+            state_size=(args.horizon, 84, 84),
+            action_size=3,
+            skip_frame=args.skip_frame,
+            horizon=args.horizon,
+            clip=False,
+            left=args.flip_2,
+        )
 
     if args.test_mode:
         if args.player == 2:
