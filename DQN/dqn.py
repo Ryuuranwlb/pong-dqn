@@ -76,6 +76,13 @@ class DQNAgent:
         self.epsilon_max = 1.0
         self.epsilon_min = 0.005
         self.epsilon_decay = 0.00001
+        self.set_flip(left, reset=False)
+
+    def set_flip(self, flip: bool, reset: bool = True):
+        self.dqn_net.obs_process_tool.flip = bool(flip)
+        self.target_net.obs_process_tool.flip = bool(flip)
+        if reset:
+            self.reset()
 
     def select_action(self, state, eps):
         self.dqn_net.eval()

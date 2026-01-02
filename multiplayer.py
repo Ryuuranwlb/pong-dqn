@@ -351,6 +351,8 @@ def main(args):
         if args.player == 2:
             agent_1.load_model(args.start_episode_1, os.path.join(CONFIG['model_dir'], args.memo_1))
             agent_2.load_model(args.start_episode_2, os.path.join(CONFIG['model_dir'], args.memo_2))
+            agent_1.set_flip(args.flip_1)
+            agent_2.set_flip(args.flip_2)
 
             CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1 + '_' + args.memo_2)
             CONFIG['video_dir'] = os.path.join(CONFIG['video_dir'], args.memo_1 + '_' + args.memo_2)
@@ -366,6 +368,7 @@ def main(args):
                 raise ValueError("video dir is not exists")
             
             agent_1.load_model(args.start_episode_1, CONFIG['model_dir'])
+            agent_1.set_flip(args.flip_1)
         
         # 测试agent
         info = test(agent_1, agent_2, players=args.player, skip_frame=args.skip_frame, horizon=args.horizon, max_steps=2500, episode=args.start_episode_1)
@@ -374,6 +377,8 @@ def main(args):
         if args.player == 2:
             agent_1.load_model(args.start_episode_1, os.path.join(CONFIG['model_dir'], args.memo_1))
             agent_2.load_model(args.start_episode_2, os.path.join(CONFIG['model_dir'], args.memo_2))
+            agent_1.set_flip(args.flip_1)
+            agent_2.set_flip(args.flip_2)
 
 
             CONFIG['model_dir'] = os.path.join(CONFIG['model_dir'], args.memo_1 + '_' + args.memo_2)
@@ -388,6 +393,7 @@ def main(args):
             if args.memo_1 != 'test':
                 if os.path.exists(CONFIG['model_dir']):
                     agent_1.load_model(args.start_episode_1 - 1, CONFIG['model_dir'])
+                    agent_1.set_flip(args.flip_1)
                 else:
                     os.makedirs(CONFIG['model_dir'])
 
