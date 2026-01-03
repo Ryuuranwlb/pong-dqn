@@ -469,18 +469,20 @@ def main(args):
     if args.player == 2 and not os.path.exists(agent2_load_dir):
         raise ValueError("agent_2 model is not exists")
 
+    # agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.train_left, loss_type=args.loss, n_step=args.n_step)
     if args.player == 1:
         agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.train_left, loss_type=args.loss, n_step=args.n_step)
         agent_2 = None
     elif args.player == 2:
         agent_1 = AGENT[args.agent_1](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.train_left, loss_type=args.loss, n_step=args.n_step)
-        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.flip2, loss_type=args.loss, n_step=args.n_step)
+        agent_2 = AGENT[args.agent_2](state_size=(args.horizon, 84, 84), action_size=3, skip_frame=args.skip_frame, horizon=args.horizon, clip=False, left=args.flip2)
 
     if args.test_mode:
         if args.player == 2:
             agent_1.load_model(args.start_step_1, agent1_load_dir)
             agent_2.load_model(args.start_step_2, agent2_load_dir)
             agent_2.set_left(args.flip2)
+            
 
             CONFIG['model_dir'] = os.path.join(base_checkpoint_root, exp_name)
             CONFIG['video_dir'] = os.path.join(base_video_root, exp_name)
@@ -512,6 +514,8 @@ def main(args):
         else:
             if args.start_step_1 > 0 and os.path.exists(agent1_load_dir):
                 agent_1.load_model(args.start_step_1, agent1_load_dir)
+
+        assert args.start_step_2 > 0
 
         run_id = RunLogger.default_run_id(exp_name, args.seed)
         run_dir = os.path.join(args.run_root, exp_name, f"seed{args.seed}", run_id)

@@ -1,10 +1,12 @@
 from functools import partial
 
-from DQN.dqn import DQNAgent
+from DQN.dqn import my8DQNAgent, teacherDQNAgent
+
 
 AGENT = {
-    'DQN': DQNAgent,
-    'DoubleDQN': partial(DQNAgent, double=True),
-    'DuelingDQN': partial(DQNAgent, dueling=True),
-    'D3QN': partial(DQNAgent, double=True, dueling=True),
+    'DQN': my8DQNAgent,
+    'DoubleDQN': partial(my8DQNAgent, double=True),
+    'DuelingDQN': partial(my8DQNAgent, dueling=True),
+    'D3QN': partial(my8DQNAgent, double=True, dueling=True),
+    'TeacherDQN': teacherDQNAgent,
 }
